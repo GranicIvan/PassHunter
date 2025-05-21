@@ -19,40 +19,14 @@ class Program
     {
         Options options = new Options();
 
-        if (args.Length == 0)
+if(args.Length < 3)
         {
-            maxLength = 5;
-            options.outputDirectory = "extracted/6";
-            options.zipFilePath = "D:\\Fajlovi D\\Projekti\\Pedjin rar fajl\\Za zip fajl\\rad\\c sharp 1\\csCracker\\z3.zip"; // Path to your ZIP file
-           
-        }
-        else if (args.Length == 1)
-        {
-            //Checking is user wants help
-            if (args[0].ToLower() == "help" || args[0].ToLower() == "-h" || args[0].ToLower() == "--help" || args[0].ToLower() == "-help")
-            {
-                printHelp();
-                return;
-            }
+            printHelp();
+            return;
 
-            //Int32.TryParse( args[0], out maxLength );
-            try
-            {
-                maxLength = Convert.ToInt32(args[0]);
-                Console.WriteLine("Max length of password is: " + maxLength);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("First argument must be number, length of password \nError: " + ex.Message);
-                return;
-            }
-
-            options.zipFilePath = Path.GetFullPath(args[0]); // Path to your ZIP file
-            
         }
         else if (args.Length >= 3) 
-        {
-            Int32.TryParse(args[0], out maxLength);
+        {            
 
             try
             {
@@ -65,8 +39,6 @@ class Program
                 return;
             }
 
-            //options.zipFilePath = args[1]; // Path to your ZIP file            
-            //options.outputDirectory = args[2]; // Destination directory
 
             options.zipFilePath = Path.GetFullPath(args[1]);
             options.outputDirectory = Path.GetFullPath(args[2]);
@@ -89,17 +61,7 @@ class Program
             //TODO add check for excluding characters eg -exclude
 
         }
-        else
-        {
-            Console.WriteLine("Please provide the path to the ZIP file as a command-line argument.");
-            return;
-        }
-
-        //foreach (var arg in args)
-        //{
-        //    Console.WriteLine("arg: "+arg);
-        //}
-
+   
 
         Console.WriteLine("Options: numbers:" + options.number + ",  a-z:" + options.lowercase + ",  A-Z:" + options.uppercase + ",  special:" + options.special);
 
@@ -110,7 +72,7 @@ class Program
 
 
 
-        for (int i = 0; i <= maxLength; i++)
+        for (int i = 1; i <= maxLength; i++)
         {
             Console.WriteLine("Trying length: " + i);
 
@@ -188,21 +150,15 @@ class Program
         for (long i = 0; i < totalCombinations; i++)
         {
 
-            //found = Extaction(options.zipFilePath, options.outputDirectory, string.Join("", passwordGen).ToString());
             string password = passwordGen.ToString();
             found = Extaction(options.zipFilePath, options.outputDirectory, password);
 
-
-            
-            
             if (found)
             {
                 return true;
             }
 
             passwordGen.nextPassword();
-            //passwordGen.nextPasswordOld2();
-            //password = new string(passwordGen.CurrentPassword);
         }       
 
         return false;
@@ -213,11 +169,9 @@ class Program
 
 class PasswordGenerator
 {
-    int currentLength; //current length 
-
+    int currentLength;
 
     public List<char> possibleCharacters = new List<char>();
-
 
     public char[] CurrentPassword { get; set; }
    
@@ -240,9 +194,6 @@ class PasswordGenerator
                 indexes[index] = 0;
                 index--;
             }
-
-
-            //Console.WriteLine("Current password: " + new string(CurrentPassword));
         }
         UpdateCurrentPassword();
     }
@@ -254,7 +205,6 @@ class PasswordGenerator
 
 
         CurrentPassword = new char[currentLength];
-
 
 
 
@@ -271,7 +221,7 @@ class PasswordGenerator
         {
             //for (char c = ' '; c <= '~'; c++) possibleCharacters.Add(c);
             possibleCharacters.AddRange(new char[] {
-                '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
+                '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_','+', '|',
                 '[', ']', '{', '}', '-', '/', '\\', '=', '?', ':', ';', '"', '\'', '<', '>', ',', '.', '`', '~',
             });
 
@@ -318,7 +268,6 @@ class PasswordGenerator
     public override string ToString() {
         return new string(CurrentPassword);
     }
-
 
 
 }
