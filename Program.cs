@@ -1,5 +1,9 @@
 ﻿using Aspose.Zip;
 using PassHunter;
+using System.Reflection;
+using System.Runtime.ConstrainedExecution;
+using System.Runtime.InteropServices;
+
 
 class Program
 {
@@ -77,6 +81,8 @@ class Program
             }
         }
 
+        Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
+
 
         options.watch.Stop();
         TimeSpan elapsed = options.watch.Elapsed;
@@ -95,6 +101,18 @@ class Program
 
     static void printHelp()
     {
+        var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+        var name = asm.GetName().Name ?? "PassHunter";
+        var verRaw = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+             ?? asm.GetName().Version?.ToString()
+             ?? "unknown";
+
+        var ver = verRaw.Split('+')[0];
+
+        var runtime = RuntimeInformation.FrameworkDescription;
+
+        Console.WriteLine($"{name} v{ver} | Runtime: {runtime}");
+
         Console.WriteLine("Usage: csCracker.exe <maxLength> <zipFilePath> <outputDirectory>");
         Console.WriteLine("Options:");
         Console.WriteLine("  -n : Include numbers");
