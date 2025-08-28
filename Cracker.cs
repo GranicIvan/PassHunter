@@ -5,6 +5,11 @@ namespace PassHunter
     class Cracker
     {
 
+        // --- in-memory probe state ---
+        private byte[]? _archiveBytes;              // entire archive kept in RAM
+        private string? _probeEntryName;            // name of smallest file entry we probe
+        private readonly byte[] _probeBuffer = new byte[256]; // single reusable read buffer
+
         public static bool Extraction(string zipFilePath, string outputDirectory, string password, out string foundPassword)
         {
             foundPassword = null;
