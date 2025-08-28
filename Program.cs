@@ -59,8 +59,6 @@ class Program
         ConsolePrinter.SetUpInfo("Options: numbers:" + options.number + ",  a-z:" + options.lowercase + ",  A-Z:" + options.uppercase + ",  special:" + options.special);
 
        
-
-        
         options.startWatch();
 
 
@@ -95,7 +93,7 @@ class Program
 
     static void printHelp()
     {
-        Console.WriteLine("Usage: csCracker.exe <maxLength> <zipFilePath> <outputDirectory>");
+        Console.WriteLine("Usage: PassHunter.exe <maxLength> <zipFilePath> <outputDirectory>");
         Console.WriteLine("Options:");
         Console.WriteLine("  -n : Include numbers");
         Console.WriteLine("  -l : Include lowercase letters");
@@ -109,8 +107,5 @@ class Program
 
 
 
-
 }
-
-
 

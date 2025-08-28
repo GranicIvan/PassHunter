@@ -81,6 +81,7 @@ namespace PassHunter
 
                 if (Cracker.Extraction(options.zipFilePath, options.outputDirectory, password, out finalPassword))
                 {
+                    Console.Write("\n");
                     return true;
                 }
 
