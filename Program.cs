@@ -81,7 +81,11 @@ class Program
             }
         }
 
-        Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
+        if (found) 
+        {
+            Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
+        }
+        
 
 
         options.watch.Stop();
