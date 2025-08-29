@@ -82,10 +82,12 @@ class Program
             }
         }
 
+
         if (found)
         {
             Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
         }
+
 
         options.watch.Stop();
         TimeSpan elapsed = options.watch.Elapsed;
