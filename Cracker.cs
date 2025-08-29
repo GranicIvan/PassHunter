@@ -50,7 +50,7 @@ namespace PassHunter
             finalPassword = null;
 
             var probe = new Cracker();
-            probe.InitializeProbe(options.zipFilePath);
+            probe.InitializeProbe(options.zipFilePath); 
 
             var passwordGen = new PasswordGeneratorOD(currentLength, options);
             long totalCombinations = (long)Math.Pow(passwordGen.possibleCharacters.Count, currentLength);
@@ -245,7 +245,7 @@ namespace PassHunter
 
         private void InitializeProbe(string archivePath)
         {
-            if (_archiveBytes != null) return;
+            if (_archiveBytes != null) return; 
 
             // 1) Slurp archive into RAM
             using (FileStream fs = File.OpenRead(archivePath))
