@@ -70,14 +70,63 @@
 
         public override string ToString()
         {
-            char[] result = new char[currentLength];
-            for (int i = 0; i < currentLength; i++)
-            {
-                result[i] = possibleCharacters[indexes[i]];
-            }
-            return new string(result);
+            //char[] result = new char[currentLength];
+            //for (int i = 0; i < currentLength; i++)
+            //{
+            //    result[i] = possibleCharacters[indexes[i]];
+            //}
+            //return new string(result);
+
+
+            int len = currentLength;
+            List<char> charsRef = possibleCharacters; // locals for JIT inlining
+            int[] idxRef = indexes;
+
+            return string.Create(
+                len,
+                (charsRef, idxRef),
+                static (dest, state) =>
+                {
+                    List<char> chars = state.Item1;
+                    int[] idx = state.Item2;
+                    for (int i = 0; i < dest.Length; i++)
+                    {
+                        dest[i] = chars[idx[i]];
+                    }
+                });
         }
 
+        
+
+
+
+
+        public long SpaceSize
+        {
+            get
+            {
+                long n = possibleCharacters.Count;
+                long res = 1;
+                for (int i = 0; i < currentLength; i++)
+                {
+                    checked { res *= n; } 
+                }
+                return res;
+            }
+        }
+
+        public void SetPositionFromLinearIndex(long position)
+        {
+            int n = possibleCharacters.Count;
+            
+            for (int i = currentLength - 1; i >= 0; i--)
+            {
+                indexes[i] = (int)(position % n);
+                position /= n;
+            }
+        }
+
+
     }
-    
+
 }

@@ -74,15 +74,18 @@ class Program
             
             
             //if (Cracker.TryPasswordsOfLength(i, options, out foundPassword))
-            if (Cracker.TryPasswordsOfLengthWEstimate(i, options, out foundPassword))
+            //if (Cracker.TryPasswordsOfLengthWEstimate(i, options, out foundPassword))
+            if (Cracker.TryPasswordsOfLengthParallelWEstimate(i, options, out foundPassword))
             {
                 found = true;
                 break;
             }
         }
 
-        Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
-
+        if (found)
+        {
+            Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
+        }
 
         options.watch.Stop();
         TimeSpan elapsed = options.watch.Elapsed;
@@ -101,15 +104,15 @@ class Program
 
     static void printHelp()
     {
-        var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
-        var name = asm.GetName().Name ?? "PassHunter";
-        var verRaw = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        System.Reflection.Assembly asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+        string name = asm.GetName().Name ?? "PassHunter";
+        string  verRaw = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
              ?? asm.GetName().Version?.ToString()
              ?? "unknown";
 
-        var ver = verRaw.Split('+')[0];
+        string ver = verRaw.Split('+')[0];
 
-        var runtime = RuntimeInformation.FrameworkDescription;
+        string runtime = RuntimeInformation.FrameworkDescription;
 
         Console.WriteLine($"{name} v{ver} | Runtime: {runtime}");
 
