@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using Aspose.Zip;
+﻿using Aspose.Zip;
 
 namespace PassHunter
 {
@@ -120,143 +119,21 @@ namespace PassHunter
             return false;
         }
 
-        public static bool TryPasswordsOfLengthParallelWEstimate(int currentLength, Options options, out string finalPassword)
-        {
-            finalPassword = null;
-
-            // Prepare the fast in-memory probe once
-            Cracker probe = new Cracker();
-            probe.InitializeProbe(options.zipFilePath);
-
-            // Compute keyspace exactly (no doubles)
-            PasswordGeneratorOD passwordGenProbe = new PasswordGeneratorOD(currentLength, options);
-            long total = passwordGenProbe.SpaceSize;
-
-            // Chunk the range [0, total) into coarse blocks to reduce overhead
-            const long targetChunk = 200_000; // tune 50k–500k
-            long chunkSize = Math.Max(50_000, Math.Min(targetChunk, Math.Max(10_000, total / (Environment.ProcessorCount * 4))));
-            OrderablePartitioner<Tuple<long, long>> ranges = Partitioner.Create(0L, total, chunkSize);
-
-            using CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-            // Accurate global progress (sum of all workers)
-            long tried = 0;
-
-            // Gate so only one thread prints per ~second
-            System.Diagnostics.Stopwatch logSw = System.Diagnostics.Stopwatch.StartNew();
-            int printGate = 0;
-
-            ParallelOptions po = new ParallelOptions
-            {
-                CancellationToken = token,
-                MaxDegreeOfParallelism = Environment.ProcessorCount
-            };
-
-            string? foundLocal = null;
-
-            try
-            {
-                Parallel.ForEach(ranges, po, (Tuple<long, long> range, ParallelLoopState state) =>
-                {
-                    // Each worker has its own generator; jump to the start of its range
-                    PasswordGeneratorOD gen = new PasswordGeneratorOD(currentLength, options);
-                    gen.SetPositionFromLinearIndex(range.Item1);
-
-                    int localTried = 0;
-
-                    for (long i = range.Item1; i < range.Item2; i++)
-                    {
-                        if (token.IsCancellationRequested) break;
-
-                        string pwd = gen.ToString();
-                        if (probe.TryPasswordFast(pwd))
-                        {
-                            // Capture once, then stop everyone
-                            Interlocked.CompareExchange(ref foundLocal, pwd, null);
-                            cts.Cancel();
-                            state.Stop();
-                            break;
-                        }
-
-                        gen.nextPassword();
-
-                        // Count locally to reduce contention
-                        localTried++;
-
-                        // Flush to global every 4096 attempts
-                        if ((localTried & 0xFFF) == 0) // 0xFFF == 4095
-                        {
-                            Interlocked.Add(ref tried, localTried);
-                            localTried = 0;
-                        }
-
-                        // Time-gated progress print (~once per second total)
-                        if (logSw.ElapsedMilliseconds >= 1000 &&
-                            Interlocked.CompareExchange(ref printGate, 1, 0) == 0)
-                        {
-                            try
-                            {
-                                long doneNow = Volatile.Read(ref tried);
-                                if (doneNow > total) doneNow = total;
-
-                                double percent = (double)doneNow / total * 100.0;
-                                double elapsedSec = options.watch.Elapsed.TotalSeconds;
-                                double avg = doneNow > 0 ? elapsedSec / doneNow : 0.0;
-                                double etaSec = (total - doneNow) * avg;
-
-                                ConsolePrinter.LiveInfo(
-                                    $"Progress: {doneNow:N0}/{total:N0} ({percent:F2}%) | Elapsed: {options.watch.Elapsed:hh\\:mm\\:ss} | ETA: {TimeSpan.FromSeconds(etaSec):hh\\:mm\\:ss}"
-                                );
-
-                                logSw.Restart();
-                            }
-                            finally
-                            {
-                                Volatile.Write(ref printGate, 0);
-                            }
-                        }
-                    }
-
-                    // Flush any remainder when the worker exits
-                    if (localTried > 0)
-                    {
-                        Interlocked.Add(ref tried, localTried);
-                    }
-                });
-            }
-            catch (OperationCanceledException)
-            {
-                // normal on success cancel
-            }
-
-            if (foundLocal is null)
-            {
-                finalPassword = string.Empty;   // satisfy 'out' assignment
-                return false;
-            }
-
-            finalPassword = foundLocal;
-            return true;
-        }
-
-
-
 
         private void InitializeProbe(string archivePath)
         {
             if (_archiveBytes != null) return;
 
             // 1) Slurp archive into RAM
-            using (FileStream fs = File.OpenRead(archivePath))
+            using (var fs = File.OpenRead(archivePath))
             {
                 _archiveBytes = new byte[fs.Length];
                 fs.ReadExactly(_archiveBytes);
             }
 
             // 2) Pick the smallest *file* entry (skip directories)
-            using Archive preview = new Archive(new MemoryStream(_archiveBytes, writable: false));
-            Aspose.Zip.ArchiveEntry? smallest = preview.Entries
+            using var preview = new Archive(new MemoryStream(_archiveBytes, writable: false));
+            var smallest = preview.Entries
                 .Where(e => !e.IsDirectory)                 // avoid directories
                 .OrderBy(e => e.CompressedSize)             // use compressed size
                 .FirstOrDefault();
@@ -277,23 +154,17 @@ namespace PassHunter
             try
             {
                 // Create a fresh stream over the same bytes (cheap)
-                using MemoryStream ms = new MemoryStream(_archiveBytes, writable: false);
+                using var ms = new MemoryStream(_archiveBytes, writable: false);
 
                 // Open the archive with the candidate password
-                using Archive a = new Archive(ms, new ArchiveLoadOptions { DecryptionPassword = password }); // :contentReference[oaicite:2]{index=2}
+                using var a = new Archive(ms, new ArchiveLoadOptions { DecryptionPassword = password }); // :contentReference[oaicite:2]{index=2}
 
                 // Locate the preselected smallest entry and open it *in memory*
-                Aspose.Zip.ArchiveEntry entry = a.Entries.First(e => e.Name == _probeEntryName);
+                var entry = a.Entries.First(e => e.Name == _probeEntryName);
 
-
-                /*
                 // Read a tiny chunk to force decryption; wrong pwd => exception
-                using System.IO.Stream s = entry.Open();        // stream with decompressed contents, no disk I/O :contentReference[oaicite:3]{index=3}
+                using var s = entry.Open();        // stream with decompressed contents, no disk I/O :contentReference[oaicite:3]{index=3}
                 _ = s.Read(_probeBuffer, 0, _probeBuffer.Length);
-                */
-                using Stream s = entry.Open();
-                Span<byte> buf = stackalloc byte[256];
-                _ = s.Read(buf);
 
                 // If we got here without an exception, password is correct
                 return true;
