@@ -83,10 +83,7 @@ class Program
         }
 
 
-        if (found)
-        {
-            Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
-        }
+        
 
 
         options.watch.Stop();
@@ -96,7 +93,9 @@ class Program
         ConsolePrinter.SetUpInfo($"Program is DONE, and took: {elapsed.Days}d {elapsed.Hours}h {elapsed.Minutes}m {elapsed.Seconds}s {elapsed.Milliseconds}ms");
         if (found)
         {
-            ConsolePrinter.Success($"✅ Password found: \"{foundPassword}\"");            
+            ConsolePrinter.Success($"✅ Password found: \"{foundPassword}\"");
+            ConsolePrinter.SetUpInfo($"Extracting files...");
+            Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
         }
         else
         {

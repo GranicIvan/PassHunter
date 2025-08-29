@@ -9,7 +9,7 @@ namespace PassHunter
         // --- in-memory probe state ---
         private byte[]? _archiveBytes;              // entire archive kept in RAM
         private string? _probeEntryName;            // name of smallest file entry we probe
-        private readonly byte[] _probeBuffer = new byte[256]; // single reusable read buffer
+        private readonly byte[] _probeBuffer = new byte[256]; // Maybe make it bigger 256 * 1024
 
         // [Depricated] Very slow, extracted to disk per guess.
         public static bool Extraction(string zipFilePath, string outputDirectory, string password, out string foundPassword)
@@ -170,7 +170,7 @@ namespace PassHunter
                         if (token.IsCancellationRequested) break;
 
                         string pwd = gen.ToString();
-                        if (probe.TryPasswordFast(pwd))
+                        if (probe.TryPasswordFast(pwd) && probe.TryPasswordFull(pwd))
                         {
                             // Capture once, then stop everyone
                             Interlocked.CompareExchange(ref foundLocal, pwd, null);
@@ -293,6 +293,7 @@ namespace PassHunter
                 */
                 using Stream s = entry.Open();
                 Span<byte> buf = stackalloc byte[256];
+                //Span<byte> buf = stackalloc byte[512];
                 _ = s.Read(buf);
 
                 // If we got here without an exception, password is correct
@@ -314,5 +315,38 @@ namespace PassHunter
             archive.ExtractToDirectory(outputDirectory);
         }
 
+        private bool TryPasswordFull(string password)
+        {
+            if (_archiveBytes == null || _probeEntryName == null)
+                throw new InvalidOperationException("Probe not initialized.");
+
+            try
+            {
+                using var ms = new MemoryStream(_archiveBytes, writable: false);
+                using var a = new Aspose.Zip.Archive(ms, new Aspose.Zip.ArchiveLoadOptions
+                {
+                    DecryptionPassword = password
+                });
+                
+                var e = a.Entries.First(x => x.Name == _probeEntryName);
+
+                using var s = e.Open();
+                // Drain to EOF so integrity/MAC is actually verified:
+                int n;
+                
+                byte[] buf = _probeBuffer; 
+                while ((n = s.Read(buf, 0, buf.Length)) > 0) { /* discard */ }
+
+                return true; 
+            }
+            catch (InvalidDataException)
+            {
+                return false; 
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }
