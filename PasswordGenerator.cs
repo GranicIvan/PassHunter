@@ -1,5 +1,6 @@
 ﻿namespace PassHunter
 {
+    [Obsolete]
     class PasswordGenerator
     {
         int currentLength;

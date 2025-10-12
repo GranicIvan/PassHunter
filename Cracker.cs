@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using Aspose.Zip;
+using System.Buffers;
 
 namespace PassHunter
 {
@@ -9,9 +10,8 @@ namespace PassHunter
         // --- in-memory probe state ---
         private byte[]? _archiveBytes;              // entire archive kept in RAM
         private string? _probeEntryName;            // name of smallest file entry we probe
-        private readonly byte[] _probeBuffer = new byte[256]; // Maybe make it bigger 256 * 1024
 
-        // [Depricated] Very slow, extracted to disk per guess.
+        [Obsolete] // Very slow, extracted to disk per guess.
         public static bool Extraction(string zipFilePath, string outputDirectory, string password, out string foundPassword)
         {
             foundPassword = null;
@@ -242,7 +242,6 @@ namespace PassHunter
 
 
 
-
         private void InitializeProbe(string archivePath)
         {
             if (_archiveBytes != null) return; 
@@ -286,11 +285,7 @@ namespace PassHunter
                 Aspose.Zip.ArchiveEntry entry = a.Entries.First(e => e.Name == _probeEntryName);
 
 
-                /*
-                // Read a tiny chunk to force decryption; wrong pwd => exception
-                using System.IO.Stream s = entry.Open();        // stream with decompressed contents, no disk I/O :contentReference[oaicite:3]{index=3}
-                _ = s.Read(_probeBuffer, 0, _probeBuffer.Length);
-                */
+
                 using Stream s = entry.Open();
                 Span<byte> buf = stackalloc byte[256];
                 //Span<byte> buf = stackalloc byte[512];
@@ -315,6 +310,7 @@ namespace PassHunter
             archive.ExtractToDirectory(outputDirectory);
         }
 
+
         private bool TryPasswordFull(string password)
         {
             if (_archiveBytes == null || _probeEntryName == null)
@@ -323,30 +319,25 @@ namespace PassHunter
             try
             {
                 using var ms = new MemoryStream(_archiveBytes, writable: false);
-                using var a = new Aspose.Zip.Archive(ms, new Aspose.Zip.ArchiveLoadOptions
-                {
-                    DecryptionPassword = password
-                });
-                
+                using var a = new Aspose.Zip.Archive(ms, new Aspose.Zip.ArchiveLoadOptions { DecryptionPassword = password });
+
                 var e = a.Entries.First(x => x.Name == _probeEntryName);
 
                 using var s = e.Open();
-                // Drain to EOF so integrity/MAC is actually verified:
-                int n;
-                
-                byte[] buf = _probeBuffer; 
-                while ((n = s.Read(buf, 0, buf.Length)) > 0) { /* discard */ }
-
-                return true; 
+                byte[] buf = System.Buffers.ArrayPool<byte>.Shared.Rent(4096); //Tweak buffer size as needed
+                try
+                {
+                    while (s.Read(buf, 0, buf.Length) > 0) { /* drain */ }
+                }
+                finally
+                {
+                    System.Buffers.ArrayPool<byte>.Shared.Return(buf);
+                }
+                return true;
             }
-            catch (InvalidDataException)
-            {
-                return false; 
-            }
-            catch
-            {
-                return false;
-            }
+            catch (InvalidDataException) { return false; }
+            catch { return false; }
         }
+
     }
 }

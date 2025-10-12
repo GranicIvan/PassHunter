@@ -115,17 +115,17 @@ class Program
 
         string runtime = RuntimeInformation.FrameworkDescription;
 
-        Console.WriteLine($"{name} v{ver} | Runtime: {runtime}");
+        ConsolePrinter.Version($"{name} v{ver} | Runtime: {runtime}");
+  
+        ConsolePrinter.Help("Usage: csCracker.exe <maxLength> <zipFilePath> <outputDirectory>");
+        ConsolePrinter.Help("Options:");
+        ConsolePrinter.Help("  -n : Include numbers");
+        ConsolePrinter.Help("  -l : Include lowercase letters");
+        ConsolePrinter.Help("  -u : Include uppercase letters");
+        ConsolePrinter.Help("  -s : Include special characters");
 
-        Console.WriteLine("Usage: csCracker.exe <maxLength> <zipFilePath> <outputDirectory>");
-        Console.WriteLine("Options:");
-        Console.WriteLine("  -n : Include numbers");
-        Console.WriteLine("  -l : Include lowercase letters");
-        Console.WriteLine("  -u : Include uppercase letters");
-        Console.WriteLine("  -s : Include special characters");
-
-        Console.WriteLine("Path must use / or \\\\ or \"\\\" ");
-        Console.WriteLine("Examples: C:/user/file.zip  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
+        ConsolePrinter.Help("Path must use / or \\\\ or \"\\\". For example: C:/user/file.zip  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
+        //ConsolePrinter.Help("Examples: C:/user/file.zip  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
         //TODO Explain unsuppoted terminals, and they print mant rows instead of updateing one, Also slower
     }
 

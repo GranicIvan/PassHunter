@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 namespace PassHunter
 {
+    [Obsolete]
     public static class ConsolePrinterOLD
     {
         public static void Info(string message)
@@ -66,7 +67,6 @@ namespace PassHunter
         private static bool _inlineActive = false;
         private static int _inlineLen = 0;
 
-        // ==== public API ====
 
         public static void LiveInfo(string text)
         {
@@ -96,11 +96,10 @@ namespace PassHunter
         public static void Success(string message) => WriteLine("[SUCCESS]", message, ConsoleColor.Green);
         public static void Error(string message) => WriteLine("[ERROR]", message, ConsoleColor.Red);        
         public static void Warning(string message) => WriteLine("[WARNING]", message, ConsoleColor.DarkYellow);
+        public static void Help(string message) => WriteLine("", message, ConsoleColor.Yellow);
+        public static void Version(string message) => WriteLine("", message, ConsoleColor.Blue);
 
-        
-        
 
-        // ==== internals ====
 
         private static void WriteLine(string tag, string message, ConsoleColor color)
         {

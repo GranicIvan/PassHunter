@@ -14,17 +14,17 @@ namespace PassHunter
         public Stopwatch watch = new Stopwatch();
 
         internal void setOptions(string[] args)
-        {
-            number = args.Any(s => string.Equals(s, "-n", StringComparison.OrdinalIgnoreCase)); // Return true if numbers are selected
+        {  
+            number = args.Any(s => string.Equals(s, "-n", StringComparison.OrdinalIgnoreCase));    // Return true if numbers are selected
             lowercase = args.Any(s => string.Equals(s, "-l", StringComparison.OrdinalIgnoreCase)); // Return true if lowercase letters are selected
             uppercase = args.Any(s => string.Equals(s, "-u", StringComparison.OrdinalIgnoreCase)); // Return true if capital letters are selected
-            special = args.Any(s => string.Equals(s, "-s", StringComparison.OrdinalIgnoreCase)); // Return true if special characters are selected
+            special = args.Any(s => string.Equals(s, "-s", StringComparison.OrdinalIgnoreCase));   // Return true if special characters are selected
             //TODO add check for extra characters eg -x or -e
             //TODO add check for excluding characters eg -exclude
 
             if (!number && !lowercase && !uppercase && !special)
             {
-                Console.WriteLine("⚠️  No options selected. Using default options: -n -l ⚠️");
+                ConsolePrinter.Warning("⚠️  No options selected. Using default options: -n -l ⚠️");
                 setDefaultOptions();
             }
         }
