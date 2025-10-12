@@ -1,9 +1,13 @@
-﻿namespace PassHunter
+﻿using System.Runtime.CompilerServices;
+
+namespace PassHunter
 {
     class PasswordGeneratorOD //On demand - doesnt have CurrentPassword field
     {
         private int currentLength;
         private int[] indexes;
+        private char[] _chars = Array.Empty<char>();
+
 
         public List<char> possibleCharacters = new List<char>();
 
@@ -12,7 +16,7 @@
         {
             this.currentLength = currentLength;            
 
-
+            /*
             if (options.number)
                 for (char c = '0'; c <= '9'; c++) possibleCharacters.Add(c);
 
@@ -31,6 +35,7 @@
             });
 
             }
+            */
 
 
             //Console.WriteLine("Possible characters: " + string.Concat(possibleCharacters));
@@ -44,15 +49,28 @@
 
             indexes = new int[currentLength];
 
-        }
+            if (options.CharSet == null || options.CharSet.Length == 0)
+            {
+                // Build from flags when caller didn't prebuild
+                options.BuildCharSet();
+            }
+            _chars = options.CharSet;
+            //_chars = possibleCharacters.ToArray(); // one-time materialize to array for faster indexing
 
+
+            //if (options.CharSet.Length == 0) options.BuildCharSet();
+            //_chars = options.CharSet;
+
+
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void nextPassword()
         {
             int index = currentLength - 1;
             while (index >= 0)
             {
 
-                if (indexes[index] + 1 < possibleCharacters.Count)
+                if (indexes[index] + 1 < _chars.Length)
                 {
                     indexes[index]++;
                     break;
@@ -68,35 +86,19 @@
 
 
 
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override string ToString()
         {
-            //char[] result = new char[currentLength];
-            //for (int i = 0; i < currentLength; i++)
-            //{
-            //    result[i] = possibleCharacters[indexes[i]];
-            //}
-            //return new string(result);
-
-
-            int len = currentLength;
-            List<char> charsRef = possibleCharacters; // locals for JIT inlining
-            int[] idxRef = indexes;
-
-            return string.Create(
-                len,
-                (charsRef, idxRef),
-                static (dest, state) =>
-                {
-                    List<char> chars = state.Item1;
-                    int[] idx = state.Item2;
-                    for (int i = 0; i < dest.Length; i++)
-                    {
-                        dest[i] = chars[idx[i]];
-                    }
-                });
+            return string.Create(currentLength, (_chars, indexes), static (dst, st) =>
+            {
+                var (chars, idx) = st;
+                for (int i = 0; i < dst.Length; i++)
+                    dst[i] = chars[idx[i]];
+            });
         }
 
-        
+
 
 
 
@@ -105,6 +107,14 @@
         {
             get
             {
+                checked
+                {
+                    long s = 1;
+                    for (int i = 0; i < currentLength; i++)
+                        s *= _chars.Length;
+                    return s;
+                }
+                /*
                 long n = possibleCharacters.Count;
                 long res = 1;
                 for (int i = 0; i < currentLength; i++)
@@ -112,19 +122,26 @@
                     checked { res *= n; } 
                 }
                 return res;
+                */
             }
         }
 
         public void SetPositionFromLinearIndex(long position)
         {
-            int n = possibleCharacters.Count;
-            
+            int n = _chars.Length;
+
+            if (n == 0)
+                throw new InvalidOperationException("Character set is empty.");
+
+
             for (int i = currentLength - 1; i >= 0; i--)
             {
                 indexes[i] = (int)(position % n);
                 position /= n;
             }
         }
+
+
 
 
     }

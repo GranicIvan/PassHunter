@@ -13,6 +13,11 @@ namespace PassHunter
         public string outputDirectory = "";
         public Stopwatch watch = new Stopwatch();
 
+        private int _maxPasswordLength = 32;
+
+        public char[] CharSet { get; private set; } = Array.Empty<char>();
+
+
         internal void setOptions(string[] args)
         {  
             number = args.Any(s => string.Equals(s, "-n", StringComparison.OrdinalIgnoreCase));    // Return true if numbers are selected
@@ -27,6 +32,8 @@ namespace PassHunter
                 ConsolePrinter.Warning("⚠️  No options selected. Using default options: -n -l ⚠️");
                 setDefaultOptions();
             }
+
+            BuildCharSet();
         }
 
         internal void setDefaultOptions()
@@ -35,11 +42,34 @@ namespace PassHunter
             lowercase = true;
             uppercase = false;
             special = false;
+
+            BuildCharSet();
         }
 
         internal void startWatch()
         {
             watch.Start();
         }
+
+
+        internal void BuildCharSet()
+        {
+            var list = new List<char>(100);
+            if (number) for (char c = '0'; c <= '9'; c++) list.Add(c);
+            if (lowercase) for (char c = 'a'; c <= 'z'; c++) list.Add(c);
+            if (uppercase) for (char c = 'A'; c <= 'Z'; c++) list.Add(c);
+            if (special)
+            {
+                list.AddRange(new[]{
+            '!', '@', '#', '$', '%', '^', '&', '*', '(', ')',
+            '-', '_', '=', '+', '[', ']', '{', '}', ';', ':',
+            '\'', '"', '\\', '|', ',', '.', '/', '<', '>', '?',
+            '~', '`'
+        });
+            }
+            CharSet = list.ToArray();
+        }
+
+
     }
 }

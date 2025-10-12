@@ -9,7 +9,8 @@ namespace PassHunter
 
         // --- in-memory probe state ---
         private byte[]? _archiveBytes;              // entire archive kept in RAM
-        private string? _probeEntryName;            // name of smallest file entry we probe
+        //private string? _probeEntryName;            // name of smallest file entry we probe
+        private int _probeIndex = -1;               // index of smallest file entry we probe
 
         [Obsolete] // Very slow, extracted to disk per guess.
         public static bool Extraction(string zipFilePath, string outputDirectory, string password, out string foundPassword)
@@ -53,7 +54,10 @@ namespace PassHunter
             probe.InitializeProbe(options.zipFilePath); 
 
             var passwordGen = new PasswordGeneratorOD(currentLength, options);
-            long totalCombinations = (long)Math.Pow(passwordGen.possibleCharacters.Count, currentLength);
+
+            //long totalCombinations = (long)Math.Pow(passwordGen.possibleCharacters.Count, currentLength); // 5
+            long totalCombinations = passwordGen.SpaceSize;
+
 
             for (long i = 0; i < totalCombinations; i++)
             {
@@ -253,6 +257,8 @@ namespace PassHunter
                 fs.ReadExactly(_archiveBytes);
             }
 
+
+            /* OLD CODE
             // 2) Pick the smallest *file* entry (skip directories)
             using Archive preview = new Archive(new MemoryStream(_archiveBytes, writable: false));
             Aspose.Zip.ArchiveEntry? smallest = preview.Entries
@@ -264,13 +270,24 @@ namespace PassHunter
                 throw new InvalidOperationException("Archive contains no file entries to probe.");
 
             _probeEntryName = smallest.Name;                // persist stable identifier
+            
+             */
+
+            using Archive preview = new Archive(new MemoryStream(_archiveBytes, writable: false));
+            var smallest = preview.Entries
+                .Select((e, i) => new { e, i })
+                .Where(x => !x.e.IsDirectory)
+                .OrderBy(x => x.e.CompressedSize)
+                .First(); // throws if archive has no files (good)
+
+            _probeIndex = smallest.i;
         }
 
 
         private bool TryPasswordFast(string password)
         {
             // Precondition sanity
-            if (_archiveBytes == null || _probeEntryName == null)
+            if (_archiveBytes == null || _probeIndex < 0)
                 throw new InvalidOperationException("Probe not initialized. Call InitializeProbe() first.");
 
             try
@@ -282,13 +299,12 @@ namespace PassHunter
                 using Archive a = new Archive(ms, new ArchiveLoadOptions { DecryptionPassword = password }); // :contentReference[oaicite:2]{index=2}
 
                 // Locate the preselected smallest entry and open it *in memory*
-                Aspose.Zip.ArchiveEntry entry = a.Entries.First(e => e.Name == _probeEntryName);
+                Aspose.Zip.ArchiveEntry entry = a.Entries[_probeIndex];
 
 
 
                 using Stream s = entry.Open();
-                Span<byte> buf = stackalloc byte[256];
-                //Span<byte> buf = stackalloc byte[512];
+                Span<byte> buf = stackalloc byte[512];
                 _ = s.Read(buf);
 
                 // If we got here without an exception, password is correct
@@ -296,9 +312,11 @@ namespace PassHunter
             }
             catch (InvalidDataException)
             {
-                // Wrong password (or corrupted archive) => keep brute-forcing
-                // Aspose docs state wrong passwords raise InvalidDataException on extraction/open. :contentReference[oaicite:4]{index=4}
                 return false;
+            }
+            catch
+            {
+                return false; 
             }
         }
 
@@ -313,7 +331,7 @@ namespace PassHunter
 
         private bool TryPasswordFull(string password)
         {
-            if (_archiveBytes == null || _probeEntryName == null)
+            if (_archiveBytes == null || _probeIndex == null)
                 throw new InvalidOperationException("Probe not initialized.");
 
             try
@@ -321,9 +339,10 @@ namespace PassHunter
                 using var ms = new MemoryStream(_archiveBytes, writable: false);
                 using var a = new Aspose.Zip.Archive(ms, new Aspose.Zip.ArchiveLoadOptions { DecryptionPassword = password });
 
-                var e = a.Entries.First(x => x.Name == _probeEntryName);
+                var e = a.Entries[_probeIndex];
 
                 using var s = e.Open();
+
                 byte[] buf = System.Buffers.ArrayPool<byte>.Shared.Rent(4096); //Tweak buffer size as needed
                 try
                 {
