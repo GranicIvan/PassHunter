@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace PassHunter
 {
-    [Obsolete]
  
     public static class ConsolePrinter
     {
@@ -100,6 +101,33 @@ namespace PassHunter
                 Console.ForegroundColor = old;
             }
         }
+
+
+        public static void printHelp()
+        {
+            System.Reflection.Assembly asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+            string name = asm.GetName().Name ?? "PassHunter";
+            string verRaw = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                 ?? asm.GetName().Version?.ToString()
+                 ?? "unknown";
+
+            string ver = verRaw.Split('+')[0];
+
+            string runtime = RuntimeInformation.FrameworkDescription;
+
+            ConsolePrinter.Version($"{name} v{ver} | Runtime: {runtime}");
+
+            ConsolePrinter.Help("Usage: csCracker.exe <maxLength> <zipFilePath> <outputDirectory>");
+            ConsolePrinter.Help("Options:");
+            ConsolePrinter.Help("  -n : Include numbers");
+            ConsolePrinter.Help("  -l : Include lowercase letters");
+            ConsolePrinter.Help("  -u : Include uppercase letters");
+            ConsolePrinter.Help("  -s : Include special characters");
+
+            ConsolePrinter.Help("Path must use / or \\\\ or \"\\\". For example: C:/user/file.zip  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
+            //TODO Explain unsuppoted terminals, and they print mant rows instead of updateing one, Also slower
+        }
+
     }
 
 }

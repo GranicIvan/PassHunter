@@ -12,117 +12,7 @@ namespace PassHunter
         //private string? _probeEntryName;            // name of smallest file entry we probe
         private int _probeIndex = -1;               // index of smallest file entry we probe
 
-        [Obsolete] // Very slow, extracted to disk per guess.
-        public static bool Extraction(string zipFilePath, string outputDirectory, string password, out string foundPassword)
-        {
-            foundPassword = null;
 
-            //Console.WriteLine("Trying password: " + password);
-
-            // Set up the decryption options with the provided password
-            var options = new ArchiveLoadOptions
-            {
-                DecryptionPassword = password
-            };
-
-            // Open the ZIP archive with the specified options
-            try
-            {
-                using (var archive = new Archive(zipFilePath, options))
-                {
-                    // Ensure the output directory exists
-                    Directory.CreateDirectory(outputDirectory);
-
-                    // Extract all contents to the output directory
-                    archive.ExtractToDirectory(outputDirectory);
-
-                    foundPassword = password;
-                }
-            }
-            catch
-            {
-                return false;
-            }
-            return true;
-        }
-
-        public static bool TryPasswordsOfLength(int currentLength, Options options, out string finalPassword)
-        {
-            finalPassword = null;
-
-            var probe = new Cracker();
-            probe.InitializeProbe(options.zipFilePath); 
-
-            var passwordGen = new PasswordGeneratorOD(currentLength, options);
-
-            //long totalCombinations = (long)Math.Pow(passwordGen.possibleCharacters.Count, currentLength); // 5
-            long totalCombinations = passwordGen.SpaceSize;
-
-
-            for (long i = 0; i < totalCombinations; i++)
-            {
-                string password = passwordGen.ToString();
-
-                // FAST path: open smallest entry in memory and read a tiny buffer
-                if (probe.TryPasswordFast(password))
-                {
-                    finalPassword = password;
-                    return true;
-                }
-
-                passwordGen.nextPassword();
-            }
-
-            return false;
-        }
-
-        public static bool TryPasswordsOfLengthWEstimate(int currentLength, Options options, out string finalPassword)
-        {
-
-            finalPassword = null;
-
-
-            var probe = new Cracker();
-            probe.InitializeProbe(options.zipFilePath);
-
-
-
-            //PasswordGenerator passwordGen = new PasswordGenerator(currentLength, options);
-            PasswordGeneratorOD passwordGen = new PasswordGeneratorOD(currentLength, options);
-
-            long totalCombinations = (long)Math.Pow(passwordGen.possibleCharacters.Count, currentLength);
-
-            for (long i = 0; i < totalCombinations; i++)
-            {
-
-                string password = passwordGen.ToString();
-
-                if (probe.TryPasswordFast(password))
-                {
-                    finalPassword = password;
-                    return true;
-                }
-
-                passwordGen.nextPassword();
-
-                if (i % 1000 == 0 && i > 0)
-                {
-                    double elapsedSeconds = options.watch.Elapsed.TotalSeconds;
-                    double percent = (double)i / totalCombinations * 100;
-                    double avgTimePerTry = elapsedSeconds / i;
-                    double etaSeconds = (totalCombinations - i) * avgTimePerTry;
-
-                    TimeSpan eta = TimeSpan.FromSeconds(etaSeconds);
-                    TimeSpan elapsed = options.watch.Elapsed;
-
-                    ConsolePrinter.LiveInfo(
-                        $"Progress: {i:N0} / {totalCombinations:N0} ({percent:F2}%) | Elapsed: {elapsed:hh\\:mm\\:ss} | ETA: {eta:hh\\:mm\\:ss}"
-                    );
-                }
-            }
-
-            return false;
-        }
 
         public static bool TryPasswordsOfLengthParallelWEstimate(int currentLength, Options options, out string finalPassword)
         {
@@ -133,7 +23,7 @@ namespace PassHunter
             probe.InitializeProbe(options.zipFilePath);
 
             // Compute keyspace exactly (no doubles)
-            PasswordGeneratorOD passwordGenProbe = new PasswordGeneratorOD(currentLength, options);
+            PasswordGenerator passwordGenProbe = new PasswordGenerator(currentLength, options);
             long total = passwordGenProbe.SpaceSize;
 
             // Chunk the range [0, total) into coarse blocks to reduce overhead
@@ -164,7 +54,7 @@ namespace PassHunter
                 Parallel.ForEach(ranges, po, (Tuple<long, long> range, ParallelLoopState state) =>
                 {
                     // Each worker has its own generator; jump to the start of its range
-                    PasswordGeneratorOD gen = new PasswordGeneratorOD(currentLength, options);
+                    PasswordGenerator gen = new PasswordGenerator(currentLength, options);
                     gen.SetPositionFromLinearIndex(range.Item1);
 
                     int localTried = 0;

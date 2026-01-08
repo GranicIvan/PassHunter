@@ -12,10 +12,10 @@ namespace PassHunter
         public string zipFilePath = "";
         public string outputDirectory = "";
         public Stopwatch watch = new Stopwatch();
-
-        private int _maxPasswordLength = 32;
+  
 
         public char[] CharSet { get; private set; } = Array.Empty<char>();
+
 
 
         internal void setOptions(string[] args)

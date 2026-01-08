@@ -1,47 +1,22 @@
-﻿namespace PassHunter
+﻿using System.Runtime.CompilerServices;
+
+namespace PassHunter
 {
-    [Obsolete]
-    class PasswordGenerator
+    class PasswordGenerator //On demand - doesnt have CurrentPassword field
     {
-        int currentLength;
+        private int currentLength;
+        private int[] indexes;
+        private char[] _chars = Array.Empty<char>();
+
 
         public List<char> possibleCharacters = new List<char>();
-
-        public char[] CurrentPassword { get; set; }
-
-
-
-        private int[] indexes;
-        public void nextPassword()
-        {
-            int index = currentLength - 1;
-            while (index >= 0)
-            {
-
-                if (indexes[index] + 1 < possibleCharacters.Count)
-                {
-                    indexes[index]++;
-                    break;
-                }
-                else
-                {
-                    indexes[index] = 0;
-                    index--;
-                }
-            }
-            UpdateCurrentPassword();
-        }
 
 
         public PasswordGenerator(int currentLength, Options options)
         {
-            this.currentLength = currentLength;
+            this.currentLength = currentLength;            
 
-
-            CurrentPassword = new char[currentLength];
-
-
-
+            /*
             if (options.number)
                 for (char c = '0'; c <= '9'; c++) possibleCharacters.Add(c);
 
@@ -60,13 +35,8 @@
             });
 
             }
+            */
 
-
-
-            for (int i = 0; i < currentLength; i++)
-            {
-                CurrentPassword[i] = possibleCharacters[0];
-            }
 
             //Console.WriteLine("Possible characters: " + string.Concat(possibleCharacters));
 
@@ -78,32 +48,96 @@
             //Console.Write("+++");
 
             indexes = new int[currentLength];
-            CurrentPassword = new char[currentLength];
-            for (int i = 0; i < currentLength; i++)
-            {
-                indexes[i] = 0;
 
+            if (options.CharSet == null || options.CharSet.Length == 0)
+            {
+                // Build from flags when caller didn't prebuild
+                options.BuildCharSet();
             }
-            UpdateCurrentPassword();
+            _chars = options.CharSet;
+            //_chars = possibleCharacters.ToArray(); // one-time materialize to array for faster indexing
+
+
+            //if (options.CharSet.Length == 0) options.BuildCharSet();
+            //_chars = options.CharSet;
 
 
         }
-
-        private void UpdateCurrentPassword()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void nextPassword()
         {
-            for (int i = 0; i < currentLength; i++)
+            int index = currentLength - 1;
+            while (index >= 0)
             {
-                CurrentPassword[i] = possibleCharacters[indexes[i]];
+
+                if (indexes[index] + 1 < _chars.Length)
+                {
+                    indexes[index]++;
+                    break;
+                }
+                else
+                {
+                    indexes[index] = 0;
+                    index--;
+                }
             }
-            //Console.WriteLine("Updated password: " + new string(CurrentPassword));
+            
         }
 
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override string ToString()
         {
-            return new string(CurrentPassword);
+            return string.Create(currentLength, (_chars, indexes), static (dst, st) =>
+            {
+                var (chars, idx) = st;
+                for (int i = 0; i < dst.Length; i++)
+                    dst[i] = chars[idx[i]];
+            });
         }
+
+
+
+        public long SpaceSize
+        {
+            get
+            {
+                checked
+                {
+                    long s = 1;
+                    for (int i = 0; i < currentLength; i++)
+                        s *= _chars.Length;
+                    return s;
+                }
+                /*
+                long n = possibleCharacters.Count;
+                long res = 1;
+                for (int i = 0; i < currentLength; i++)
+                {
+                    checked { res *= n; } 
+                }
+                return res;
+                */
+            }
+        }
+
+        public void SetPositionFromLinearIndex(long position)
+        {
+            int n = _chars.Length;
+
+            if (n == 0)
+                throw new InvalidOperationException("Character set is empty.");
+
+
+            for (int i = currentLength - 1; i >= 0; i--)
+            {
+                indexes[i] = (int)(position % n);
+                position /= n;
+            }
+        }
+
 
 
     }
+
 }
