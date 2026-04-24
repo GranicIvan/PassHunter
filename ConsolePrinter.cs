@@ -117,14 +117,15 @@ namespace PassHunter
 
             ConsolePrinter.Version($"{name} v{ver} | Runtime: {runtime}");
 
-            ConsolePrinter.Help("Usage: csCracker.exe <maxLength> <zipFilePath> <outputDirectory>");
+            ConsolePrinter.Help("Usage: csCracker.exe <maxLength> <archiveFilePath> <outputDirectory>");
+            ConsolePrinter.Help("Supported archive types: .zip, .rar");
             ConsolePrinter.Help("Options:");
             ConsolePrinter.Help("  -n : Include numbers");
             ConsolePrinter.Help("  -l : Include lowercase letters");
             ConsolePrinter.Help("  -u : Include uppercase letters");
             ConsolePrinter.Help("  -s : Include special characters");
 
-            ConsolePrinter.Help("Path must use / or \\\\ or \"\\\". For example: C:/user/file.zip  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
+            ConsolePrinter.Help("Path must use / or \\\\ or \"\\\". For example: C:/user/file.rar  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
             //TODO Explain unsuppoted terminals, and they print mant rows instead of updateing one, Also slower
         }
 

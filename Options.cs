@@ -2,6 +2,8 @@
 
 namespace PassHunter
 {
+    enum ArchiveType { Zip, Rar }
+
     class Options
     {
         // by default numbers and lowercase letters are selected
@@ -11,12 +13,19 @@ namespace PassHunter
         public bool special;
         public string zipFilePath = "";
         public string outputDirectory = "";
+        public ArchiveType archiveType = ArchiveType.Zip;
         public Stopwatch watch = new Stopwatch();
   
 
         public char[] CharSet { get; private set; } = Array.Empty<char>();
 
 
+
+        internal void DetectArchiveType()
+        {
+            string ext = Path.GetExtension(zipFilePath).ToLowerInvariant();
+            archiveType = ext == ".rar" ? ArchiveType.Rar : ArchiveType.Zip;
+        }
 
         internal void setOptions(string[] args)
         {  

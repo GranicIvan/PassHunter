@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using Aspose.Zip;
+using Aspose.Zip.Rar;
 using System.Buffers;
 
 namespace PassHunter
@@ -7,10 +8,13 @@ namespace PassHunter
     class Cracker
     {
 
-        // --- in-memory probe state ---
+        // --- in-memory probe state (ZIP) ---
         private byte[]? _archiveBytes;              // entire archive kept in RAM
-        //private string? _probeEntryName;            // name of smallest file entry we probe
         private int _probeIndex = -1;               // index of smallest file entry we probe
+
+        // --- in-memory probe state (RAR) ---
+        private byte[]? _rarBytes;
+        private int _rarProbeIndex = -1;
 
 
 
@@ -20,7 +24,10 @@ namespace PassHunter
 
             // Prepare the fast in-memory probe once
             Cracker probe = new Cracker();
-            probe.InitializeProbe(options.zipFilePath);
+            if (options.archiveType == ArchiveType.Rar)
+                probe.InitializeRarProbe(options.zipFilePath);
+            else
+                probe.InitializeProbe(options.zipFilePath);
 
             // Compute keyspace exactly (no doubles)
             PasswordGenerator passwordGenProbe = new PasswordGenerator(currentLength, options);
@@ -64,7 +71,10 @@ namespace PassHunter
                         if (token.IsCancellationRequested) break;
 
                         string pwd = gen.ToString();
-                        if (probe.TryPasswordFast(pwd) && probe.TryPasswordFull(pwd))
+                        bool matched = options.archiveType == ArchiveType.Rar
+                            ? probe.TryRarPassword(pwd)
+                            : (probe.TryPasswordFast(pwd) && probe.TryPasswordFull(pwd));
+                        if (matched)
                         {
                             // Capture once, then stop everyone
                             Interlocked.CompareExchange(ref foundLocal, pwd, null);
@@ -210,12 +220,21 @@ namespace PassHunter
             }
         }
 
-        public static void ExtractOnce(string zipFilePath, string outputDirectory, string password)
+        public static void ExtractOnce(string zipFilePath, string outputDirectory, string password, ArchiveType archiveType = ArchiveType.Zip)
         {
-            var load = new ArchiveLoadOptions { DecryptionPassword = password };
-            using var archive = new Archive(zipFilePath, load);
             Directory.CreateDirectory(outputDirectory);
-            archive.ExtractToDirectory(outputDirectory);
+            if (archiveType == ArchiveType.Rar)
+            {
+                var load = new RarArchiveLoadOptions { DecryptionPassword = password };
+                using var archive = new RarArchive(zipFilePath, load);
+                archive.ExtractToDirectory(outputDirectory);
+            }
+            else
+            {
+                var load = new ArchiveLoadOptions { DecryptionPassword = password };
+                using var archive = new Archive(zipFilePath, load);
+                archive.ExtractToDirectory(outputDirectory);
+            }
         }
 
 
@@ -241,6 +260,58 @@ namespace PassHunter
                 finally
                 {
                     System.Buffers.ArrayPool<byte>.Shared.Return(buf);
+                }
+                return true;
+            }
+            catch (InvalidDataException) { return false; }
+            catch { return false; }
+        }
+
+        // ----------------------------------------------------------------
+        // RAR support
+        // ----------------------------------------------------------------
+
+        private void InitializeRarProbe(string archivePath)
+        {
+            if (_rarBytes != null) return;
+
+            using (FileStream fs = File.OpenRead(archivePath))
+            {
+                _rarBytes = new byte[fs.Length];
+                fs.ReadExactly(_rarBytes);
+            }
+
+            using RarArchive preview = new RarArchive(new MemoryStream(_rarBytes, writable: false));
+            var smallest = preview.Entries
+                .Select((e, i) => new { e, i })
+                .Where(x => !x.e.IsDirectory)
+                .OrderBy(x => x.e.CompressedSize)
+                .First();
+
+            _rarProbeIndex = smallest.i;
+        }
+
+        private bool TryRarPassword(string password)
+        {
+            if (_rarBytes == null || _rarProbeIndex < 0)
+                throw new InvalidOperationException("RAR probe not initialized. Call InitializeRarProbe() first.");
+
+            try
+            {
+                using MemoryStream ms = new MemoryStream(_rarBytes, writable: false);
+                using RarArchive a = new RarArchive(ms, new RarArchiveLoadOptions { DecryptionPassword = password });
+
+                RarArchiveEntry entry = a.Entries[_rarProbeIndex];
+                using Stream s = entry.Open();
+
+                byte[] buf = ArrayPool<byte>.Shared.Rent(4096);
+                try
+                {
+                    while (s.Read(buf, 0, buf.Length) > 0) { /* drain */ }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buf);
                 }
                 return true;
             }

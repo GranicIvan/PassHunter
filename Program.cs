@@ -48,13 +48,13 @@ class Program
 
             if (!File.Exists(options.zipFilePath))
             {
-                ConsolePrinter.Warning("⚠️  ZIP file not found. Use / or \\\\ or \"\\\" ⚠️");
+                ConsolePrinter.Warning("⚠️  Archive file not found. Use / or \\\\ or \"\\\" ⚠️");
                 return;
             }
 
-            //Console.WriteLine("File path: " + options.zipFilePath);
+            options.DetectArchiveType();
+            ConsolePrinter.SetUpInfo("Detected archive type: " + options.archiveType);
 
-            
             options.setOptions(args);
 
         }
@@ -88,7 +88,7 @@ class Program
         {
             ConsolePrinter.Success($"✅ Password found: \"{foundPassword}\"");
             ConsolePrinter.SetUpInfo($"Extracting files...");
-            Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword);
+            Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword, options.archiveType);
         }
         else
         {
