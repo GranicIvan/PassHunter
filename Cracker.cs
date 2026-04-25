@@ -17,6 +17,7 @@ namespace PassHunter
         // --- in-memory probe state (RAR) ---
         private byte[]? _rarBytes;
         private int _rarProbeIndex = -1;
+        private bool _rarHeadersEncrypted = false;
 
 
 
@@ -75,7 +76,7 @@ namespace PassHunter
                     // workers down to ~2. BorrowXxxProbe shares the bytes reference (no copy).
                     Cracker probe = new Cracker();
                     if (options.archiveType == ArchiveType.Rar)
-                        probe.BorrowRarProbe(master._rarBytes!, master._rarProbeIndex);
+                        probe.BorrowRarProbe(master._rarBytes!, master._rarProbeIndex, master._rarHeadersEncrypted);
                     else
                         probe.BorrowZipProbe(master._archiveBytes!, master._probeIndex);
 
@@ -216,10 +217,11 @@ namespace PassHunter
         /// Lets a worker thread reuse the RAR bytes already loaded by the master Cracker.
         /// No file I/O, no memory copy - just a reference share (bytes are read-only).
         /// </summary>
-        internal void BorrowRarProbe(byte[] bytes, int probeIndex)
+        internal void BorrowRarProbe(byte[] bytes, int probeIndex, bool headersEncrypted)
         {
-            _rarBytes      = bytes;
-            _rarProbeIndex = probeIndex;
+            _rarBytes            = bytes;
+            _rarProbeIndex       = probeIndex;
+            _rarHeadersEncrypted = headersEncrypted;
         }
 
 
@@ -320,34 +322,52 @@ namespace PassHunter
                 fs.ReadExactly(_rarBytes);
             }
 
-            // Use SharpCompress to find the smallest entry index (no global lock).
-            using var ms = new MemoryStream(_rarBytes, writable: false);
-            using var preview = ScRar.OpenArchive(ms);
-            var smallest = preview.Entries
-                .Select((e, i) => new { e, i })
-                .Where(x => !x.e.IsDirectory)
-                .OrderBy(x => x.e.CompressedSize)
-                .First();
+            // Try to enumerate entries without a password.
+            // If the archive uses header encryption (filenames are encrypted too),
+            // SharpCompress throws CryptographicException before we can read any entry.
+            // In that case we set a flag and defer probing until we have a password candidate.
+            try
+            {
+                using var ms = new MemoryStream(_rarBytes, writable: false);
+                using var preview = ScRar.OpenArchive(ms);
+                var smallest = preview.Entries
+                    .Select((e, i) => new { e, i })
+                    .Where(x => !x.e.IsDirectory)
+                    .OrderBy(x => x.e.CompressedSize)
+                    .First();
 
-            _rarProbeIndex = smallest.i;
+                _rarProbeIndex = smallest.i;
+            }
+            catch (SharpCompress.Common.CryptographicException)
+            {
+                _rarHeadersEncrypted = true;
+                ConsolePrinter.Warning("RAR archive has encrypted headers (filenames hidden). Will probe using password to decrypt headers.");
+            }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                _rarHeadersEncrypted = true;
+                ConsolePrinter.Warning("RAR archive has encrypted headers (filenames hidden). Will probe using password to decrypt headers.");
+            }
         }
 
         private bool TryRarPassword(string password)
         {
-            if (_rarBytes == null || _rarProbeIndex < 0)
+            if (_rarBytes == null)
+                throw new InvalidOperationException("RAR probe not initialized. Call InitializeRarProbe() first.");
+            if (!_rarHeadersEncrypted && _rarProbeIndex < 0)
                 throw new InvalidOperationException("RAR probe not initialized. Call InitializeRarProbe() first.");
 
             try
             {
-                // SharpCompress has NO global static lock - each call is fully independent,
-                // so all CPU cores can probe passwords simultaneously.
                 using var ms = new MemoryStream(_rarBytes, writable: false);
                 var opts = new ReaderOptions { Password = password, LeaveStreamOpen = false };
                 using var archive = ScRar.OpenArchive(ms, opts);
 
-                var entry = archive.Entries
-                    .Where(e => !e.IsDirectory)
-                    .ElementAt(_rarProbeIndex);
+                // For header-encrypted archives the password is needed just to read entry list.
+                // We take the first available file entry and drain it to confirm the password.
+                var entry = _rarHeadersEncrypted
+                    ? archive.Entries.Where(e => !e.IsDirectory).First()
+                    : archive.Entries.Where(e => !e.IsDirectory).ElementAt(_rarProbeIndex);
 
                 using var entryStream = entry.OpenEntryStream();
                 byte[] buf = ArrayPool<byte>.Shared.Rent(4096);
