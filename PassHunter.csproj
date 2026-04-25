@@ -7,14 +7,21 @@
     <Nullable>enable</Nullable>
 
 
-    <Version>0.2.0-Beta-2</Version>
+    <Version>0.3.0-Beta-3.0</Version>
 
 
     
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="testFiles\FastTest\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Aspose.Zip" Version="25.5.0" />
+    <PackageReference Include="SharpCompress" Version="0.47.4" />
   </ItemGroup>
 
 </Project>
