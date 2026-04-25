@@ -1,7 +1,9 @@
 ﻿using System.Collections.Concurrent;
 using Aspose.Zip;
-using Aspose.Zip.Rar;
 using System.Buffers;
+using SharpCompress.Common;
+using SharpCompress.Readers;
+using ScRar = SharpCompress.Archives.Rar.RarArchive;
 
 namespace PassHunter
 {
@@ -22,20 +24,28 @@ namespace PassHunter
         {
             finalPassword = null;
 
-            // Prepare the fast in-memory probe once
-            Cracker probe = new Cracker();
+            // Load archive bytes + pick probe index ONCE on the main thread.
+            // The raw bytes are then shared read-only; each worker gets its OWN Cracker
+            // so RarArchive/Archive objects are never shared - eliminates internal locking.
+            Cracker master = new Cracker();
             if (options.archiveType == ArchiveType.Rar)
-                probe.InitializeRarProbe(options.zipFilePath);
+                master.InitializeRarProbe(options.zipFilePath);
             else
-                probe.InitializeProbe(options.zipFilePath);
+                master.InitializeProbe(options.zipFilePath);
 
             // Compute keyspace exactly (no doubles)
             PasswordGenerator passwordGenProbe = new PasswordGenerator(currentLength, options);
             long total = passwordGenProbe.SpaceSize;
 
-            // Chunk the range [0, total) into coarse blocks to reduce overhead
-            const long targetChunk = 200_000; // tune 50k–500k
-            long chunkSize = Math.Max(50_000, Math.Min(targetChunk, Math.Max(10_000, total / (Environment.ProcessorCount * 4))));
+            // Chunk the range [0, total) into coarse blocks to reduce overhead.
+            // RAR attempts are slow (~ms each due to crypto), so tiny chunks are fine and
+            // necessary to create enough work items to keep all cores busy.
+            // ZIP attempts are fast (~µs), so a larger minimum avoids partitioner overhead.
+            long chunkSize;
+            if (options.archiveType == ArchiveType.Rar)
+                chunkSize = Math.Max(1, total / (Environment.ProcessorCount * 8));
+            else
+                chunkSize = Math.Max(50_000, Math.Min(200_000, Math.Max(10_000, total / (Environment.ProcessorCount * 4))));
             OrderablePartitioner<Tuple<long, long>> ranges = Partitioner.Create(0L, total, chunkSize);
 
             using CancellationTokenSource cts = new CancellationTokenSource();
@@ -60,6 +70,15 @@ namespace PassHunter
             {
                 Parallel.ForEach(ranges, po, (Tuple<long, long> range, ParallelLoopState state) =>
                 {
+                    // Each worker gets its OWN Cracker - critical for RAR: RarArchive has
+                    // internal locking so sharing one instance across threads serialises all
+                    // workers down to ~2. BorrowXxxProbe shares the bytes reference (no copy).
+                    Cracker probe = new Cracker();
+                    if (options.archiveType == ArchiveType.Rar)
+                        probe.BorrowRarProbe(master._rarBytes!, master._rarProbeIndex);
+                    else
+                        probe.BorrowZipProbe(master._archiveBytes!, master._probeIndex);
+
                     // Each worker has its own generator; jump to the start of its range
                     PasswordGenerator gen = new PasswordGenerator(currentLength, options);
                     gen.SetPositionFromLinearIndex(range.Item1);
@@ -183,6 +202,26 @@ namespace PassHunter
             _probeIndex = smallest.i;
         }
 
+        /// <summary>
+        /// Lets a worker thread reuse the ZIP bytes already loaded by the master Cracker.
+        /// No file I/O, no memory copy - just a reference share (bytes are read-only).
+        /// </summary>
+        internal void BorrowZipProbe(byte[] bytes, int probeIndex)
+        {
+            _archiveBytes = bytes;
+            _probeIndex   = probeIndex;
+        }
+
+        /// <summary>
+        /// Lets a worker thread reuse the RAR bytes already loaded by the master Cracker.
+        /// No file I/O, no memory copy - just a reference share (bytes are read-only).
+        /// </summary>
+        internal void BorrowRarProbe(byte[] bytes, int probeIndex)
+        {
+            _rarBytes      = bytes;
+            _rarProbeIndex = probeIndex;
+        }
+
 
         private bool TryPasswordFast(string password)
         {
@@ -225,8 +264,8 @@ namespace PassHunter
             Directory.CreateDirectory(outputDirectory);
             if (archiveType == ArchiveType.Rar)
             {
-                var load = new RarArchiveLoadOptions { DecryptionPassword = password };
-                using var archive = new RarArchive(zipFilePath, load);
+                var load = new Aspose.Zip.Rar.RarArchiveLoadOptions { DecryptionPassword = password };
+                using var archive = new Aspose.Zip.Rar.RarArchive(zipFilePath, load);
                 archive.ExtractToDirectory(outputDirectory);
             }
             else
@@ -281,7 +320,9 @@ namespace PassHunter
                 fs.ReadExactly(_rarBytes);
             }
 
-            using RarArchive preview = new RarArchive(new MemoryStream(_rarBytes, writable: false));
+            // Use SharpCompress to find the smallest entry index (no global lock).
+            using var ms = new MemoryStream(_rarBytes, writable: false);
+            using var preview = ScRar.OpenArchive(ms);
             var smallest = preview.Entries
                 .Select((e, i) => new { e, i })
                 .Where(x => !x.e.IsDirectory)
@@ -298,16 +339,21 @@ namespace PassHunter
 
             try
             {
-                using MemoryStream ms = new MemoryStream(_rarBytes, writable: false);
-                using RarArchive a = new RarArchive(ms, new RarArchiveLoadOptions { DecryptionPassword = password });
+                // SharpCompress has NO global static lock - each call is fully independent,
+                // so all CPU cores can probe passwords simultaneously.
+                using var ms = new MemoryStream(_rarBytes, writable: false);
+                var opts = new ReaderOptions { Password = password, LeaveStreamOpen = false };
+                using var archive = ScRar.OpenArchive(ms, opts);
 
-                RarArchiveEntry entry = a.Entries[_rarProbeIndex];
-                using Stream s = entry.Open();
+                var entry = archive.Entries
+                    .Where(e => !e.IsDirectory)
+                    .ElementAt(_rarProbeIndex);
 
+                using var entryStream = entry.OpenEntryStream();
                 byte[] buf = ArrayPool<byte>.Shared.Rent(4096);
                 try
                 {
-                    while (s.Read(buf, 0, buf.Length) > 0) { /* drain */ }
+                    while (entryStream.Read(buf, 0, buf.Length) > 0) { /* drain */ }
                 }
                 finally
                 {
@@ -315,7 +361,9 @@ namespace PassHunter
                 }
                 return true;
             }
-            catch (InvalidDataException) { return false; }
+            catch (System.Security.Cryptography.CryptographicException) { return false; }
+            catch (InvalidFormatException) { return false; }
+            catch (InvalidOperationException) { return false; }
             catch { return false; }
         }
 
