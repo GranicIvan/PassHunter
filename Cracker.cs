@@ -61,8 +61,10 @@ namespace PassHunter
             // Accurate global progress (sum of all workers)
             long tried = 0;
 
-            // Gate so only one thread prints per ~second
-            System.Diagnostics.Stopwatch logSw = System.Diagnostics.Stopwatch.StartNew();
+            // Bug 7 fix: use a volatile timestamp instead of a shared Stopwatch.
+            // Stopwatch.Restart() is not atomic with ElapsedMilliseconds reads across threads.
+            long lastPrintTick = 0;
+            long printIntervalTicks = System.Diagnostics.Stopwatch.Frequency; // 1 second
             int printGate = 0;
 
             ParallelOptions po = new ParallelOptions
@@ -125,8 +127,9 @@ namespace PassHunter
                             localTried = 0;
                         }
 
-                        // Time-gated progress print (~once per second total)
-                        if (logSw.ElapsedMilliseconds >= 1000 &&
+                        // Bug 7 fix: time-gated progress print using atomic timestamp comparison.
+                        long nowTick = System.Diagnostics.Stopwatch.GetTimestamp();
+                        if (nowTick - Volatile.Read(ref lastPrintTick) >= printIntervalTicks &&
                             Interlocked.CompareExchange(ref printGate, 1, 0) == 0)
                         {
                             try
@@ -144,7 +147,7 @@ namespace PassHunter
                                     $"Progress: {doneNow:N0}/{total:N0} ({percent:F2}%) | Elapsed: {elapsed:hh\\:mm\\:ss} | ETA: {TimeSpan.FromSeconds(etaSec):hh\\:mm\\:ss}"
                                 );
 
-                                logSw.Restart();
+                                Interlocked.Exchange(ref lastPrintTick, System.Diagnostics.Stopwatch.GetTimestamp());
                             }
                             finally
                             {
@@ -191,20 +194,6 @@ namespace PassHunter
             }
 
 
-            /* OLD CODE
-            // 2) Pick the smallest *file* entry (skip directories)
-            using Archive preview = new Archive(new MemoryStream(_archiveBytes, writable: false));
-            Aspose.Zip.ArchiveEntry? smallest = preview.Entries
-                .Where(e => !e.IsDirectory)                 // avoid directories
-                .OrderBy(e => e.CompressedSize)             // use compressed size
-                .FirstOrDefault();
-
-            if (smallest == null)
-                throw new InvalidOperationException("Archive contains no file entries to probe.");
-
-            _probeEntryName = smallest.Name;                // persist stable identifier
-            
-             */
 
             using Archive preview = new Archive(new MemoryStream(_archiveBytes, writable: false));
             var smallest = preview.Entries
@@ -264,13 +253,10 @@ namespace PassHunter
                 // If we got here without an exception, password is correct
                 return true;
             }
-            catch (InvalidDataException)
+            // Bug 6 fix: narrow catch to only expected failure exceptions.
+            catch (Exception ex) when (ex is InvalidDataException or IOException or System.Security.Cryptography.CryptographicException)
             {
                 return false;
-            }
-            catch
-            {
-                return false; 
             }
         }
 
@@ -294,7 +280,8 @@ namespace PassHunter
 
         private bool TryPasswordFull(string password)
         {
-            if (_archiveBytes == null || _probeIndex == null)
+            // Bug 2 fix: _probeIndex is int (value type), comparing to null is always false.
+            if (_archiveBytes == null || _probeIndex < 0)
                 throw new InvalidOperationException("Probe not initialized.");
 
             try
@@ -317,8 +304,9 @@ namespace PassHunter
                 }
                 return true;
             }
-            catch (InvalidDataException) { return false; }
-            catch { return false; }
+            // Bug 6 fix: narrow catch to only expected failure exceptions.
+            catch (Exception ex) when (ex is InvalidDataException or IOException or System.Security.Cryptography.CryptographicException)
+            { return false; }
         }
 
         // ----------------------------------------------------------------
@@ -394,10 +382,13 @@ namespace PassHunter
                 }
                 return true;
             }
-            catch (System.Security.Cryptography.CryptographicException) { return false; }
-            catch (InvalidFormatException) { return false; }
-            catch (InvalidOperationException) { return false; }
-            catch { return false; }
+            // Bug 6 fix: narrow catch to only expected failure exceptions.
+            catch (Exception ex) when (ex is System.Security.Cryptography.CryptographicException
+                                           or SharpCompress.Common.CryptographicException
+                                           or InvalidFormatException
+                                           or InvalidOperationException
+                                           or IOException)
+            { return false; }
         }
 
     }
