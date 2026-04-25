@@ -118,6 +118,7 @@ namespace PassHunter
             ConsolePrinter.Version($"{name} v{ver} | Runtime: {runtime}");
 
             ConsolePrinter.Help("Usage: csCracker.exe <maxLength> <archiveFilePath> <outputDirectory>");
+            ConsolePrinter.Help("       csCracker.exe --fasttest|-ft [testDirectory]  (default: testFiles/FastTest in output folder)");
             ConsolePrinter.Help("Supported archive types: .zip, .rar");
             ConsolePrinter.Help("Options:");
             ConsolePrinter.Help("  -n : Include numbers");

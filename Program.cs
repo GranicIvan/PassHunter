@@ -18,6 +18,16 @@ class Program
 
         if(args.Length < 3)
         {
+            // Special case: --fasttest|-ft [directory]
+            if (args.Length >= 1 && (args[0].Equals("--fasttest", StringComparison.OrdinalIgnoreCase) || args[0].Equals("-ft", StringComparison.OrdinalIgnoreCase)))
+            {
+                string testDir = args.Length == 2
+                    ? Path.GetFullPath(args[1])
+                    : Path.Combine(AppContext.BaseDirectory, "testFiles", "FastTest");
+                FastTestRunner.Run(testDir);
+                return;
+            }
+
             ConsolePrinter.printHelp();
             return;
 
@@ -48,7 +58,7 @@ class Program
 
             if (!File.Exists(options.zipFilePath))
             {
-                ConsolePrinter.Warning("⚠️  Archive file not found. Use / or \\\\ or \"\\\" ⚠️");
+                ConsolePrinter.Warning("Archive file not found. Use / or \\\\ or \"\\\"");
                 return;
             }
 
@@ -86,13 +96,13 @@ class Program
         ConsolePrinter.SetUpInfo($"Program is DONE, and took: {elapsed.Days}d {elapsed.Hours}h {elapsed.Minutes}m {elapsed.Seconds}s {elapsed.Milliseconds}ms");
         if (found)
         {
-            ConsolePrinter.Success($"✅ Password found: \"{foundPassword}\"");
+            ConsolePrinter.Success($"Password found: \"{foundPassword}\"");
             ConsolePrinter.SetUpInfo($"Extracting files...");
             Cracker.ExtractOnce(options.zipFilePath, options.outputDirectory, foundPassword, options.archiveType);
         }
         else
         {
-            ConsolePrinter.Error("⛔ Failed to find password, file is still LOCKED.");            
+            ConsolePrinter.Error("Failed to find password, file is still LOCKED.");            
         }
     }
 
