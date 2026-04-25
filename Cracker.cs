@@ -13,11 +13,13 @@ namespace PassHunter
         // --- in-memory probe state (ZIP) ---
         private byte[]? _archiveBytes;              // entire archive kept in RAM
         private int _probeIndex = -1;               // index of smallest file entry we probe
+        private MemoryStream? _zipStream;            // reused per worker; reset Position before each attempt
 
         // --- in-memory probe state (RAR) ---
         private byte[]? _rarBytes;
         private int _rarProbeIndex = -1;
         private bool _rarHeadersEncrypted = false;
+        private MemoryStream? _rarStream;            // reused per worker; reset Position before each attempt
 
 
 
@@ -105,7 +107,7 @@ namespace PassHunter
                         string pwd = gen.ToString();
                         bool matched = options.archiveType == ArchiveType.Rar
                             ? probe.TryRarPassword(pwd)
-                            : (probe.TryPasswordFast(pwd) && probe.TryPasswordFull(pwd));
+                            : probe.TryPasswordZip(pwd);
                         if (matched)
                         {
                             // Capture once, then stop everyone
@@ -213,6 +215,7 @@ namespace PassHunter
         {
             _archiveBytes = bytes;
             _probeIndex   = probeIndex;
+            _zipStream    = new MemoryStream(bytes, writable: false);
         }
 
         /// <summary>
@@ -224,36 +227,37 @@ namespace PassHunter
             _rarBytes            = bytes;
             _rarProbeIndex       = probeIndex;
             _rarHeadersEncrypted = headersEncrypted;
+            _rarStream           = new MemoryStream(bytes, writable: false);
         }
 
 
-        private bool TryPasswordFast(string password)
+        // Perf #3: merged fast+full into a single archive open with a full drain.
+        // Perf #5: reuses the cached _zipStream (reset position) instead of allocating a new MemoryStream each attempt.
+        private bool TryPasswordZip(string password)
         {
-            // Precondition sanity
-            if (_archiveBytes == null || _probeIndex < 0)
+            if (_archiveBytes == null || _probeIndex < 0 || _zipStream == null)
                 throw new InvalidOperationException("Probe not initialized. Call InitializeProbe() first.");
 
             try
             {
-                // Create a fresh stream over the same bytes (cheap)
-                using MemoryStream ms = new MemoryStream(_archiveBytes, writable: false);
+                // Perf #5: reset the cached stream instead of allocating a new MemoryStream.
+                _zipStream.Position = 0;
 
-                // Open the archive with the candidate password
-                using Archive a = new Archive(ms, new ArchiveLoadOptions { DecryptionPassword = password }); // :contentReference[oaicite:2]{index=2}
+                using Archive a = new Archive(_zipStream, new ArchiveLoadOptions { DecryptionPassword = password });
 
-                // Locate the preselected smallest entry and open it *in memory*
-                Aspose.Zip.ArchiveEntry entry = a.Entries[_probeIndex];
+                using Stream s = a.Entries[_probeIndex].Open();
 
-
-
-                using Stream s = entry.Open();
-                Span<byte> buf = stackalloc byte[512];
-                _ = s.Read(buf);
-
-                // If we got here without an exception, password is correct
+                byte[] buf = ArrayPool<byte>.Shared.Rent(4096);
+                try
+                {
+                    while (s.Read(buf, 0, buf.Length) > 0) { /* drain */ }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buf);
+                }
                 return true;
             }
-            // Bug 6 fix: narrow catch to only expected failure exceptions.
             catch (Exception ex) when (ex is InvalidDataException or IOException or System.Security.Cryptography.CryptographicException)
             {
                 return false;
@@ -278,36 +282,7 @@ namespace PassHunter
         }
 
 
-        private bool TryPasswordFull(string password)
-        {
-            // Bug 2 fix: _probeIndex is int (value type), comparing to null is always false.
-            if (_archiveBytes == null || _probeIndex < 0)
-                throw new InvalidOperationException("Probe not initialized.");
 
-            try
-            {
-                using var ms = new MemoryStream(_archiveBytes, writable: false);
-                using var a = new Aspose.Zip.Archive(ms, new Aspose.Zip.ArchiveLoadOptions { DecryptionPassword = password });
-
-                var e = a.Entries[_probeIndex];
-
-                using var s = e.Open();
-
-                byte[] buf = System.Buffers.ArrayPool<byte>.Shared.Rent(4096); //Tweak buffer size as needed
-                try
-                {
-                    while (s.Read(buf, 0, buf.Length) > 0) { /* drain */ }
-                }
-                finally
-                {
-                    System.Buffers.ArrayPool<byte>.Shared.Return(buf);
-                }
-                return true;
-            }
-            // Bug 6 fix: narrow catch to only expected failure exceptions.
-            catch (Exception ex) when (ex is InvalidDataException or IOException or System.Security.Cryptography.CryptographicException)
-            { return false; }
-        }
 
         // ----------------------------------------------------------------
         // RAR support
@@ -360,9 +335,10 @@ namespace PassHunter
 
             try
             {
-                using var ms = new MemoryStream(_rarBytes, writable: false);
-                var opts = new ReaderOptions { Password = password, LeaveStreamOpen = false };
-                using var archive = ScRar.OpenArchive(ms, opts);
+                // Perf #5: reset cached stream position instead of allocating a new MemoryStream.
+                _rarStream!.Position = 0;
+                var opts = new ReaderOptions { Password = password, LeaveStreamOpen = true };
+                using var archive = ScRar.OpenArchive(_rarStream, opts);
 
                 // For header-encrypted archives the password is needed just to read entry list.
                 // We take the first available file entry and drain it to confirm the password.
