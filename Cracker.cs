@@ -21,7 +21,7 @@ namespace PassHunter
 
 
 
-        public static bool TryPasswordsOfLengthParallelWEstimate(int currentLength, Options options, out string finalPassword)
+        public static bool TryPasswordsOfLengthParallelWEstimate(int currentLength, Options options, out string finalPassword, long startLinearIndex = 0, CheckpointState? checkpointState = null)
         {
             finalPassword = null;
 
@@ -47,7 +47,13 @@ namespace PassHunter
                 chunkSize = Math.Max(1, total / (Environment.ProcessorCount * 8));
             else
                 chunkSize = Math.Max(50_000, Math.Min(200_000, Math.Max(10_000, total / (Environment.ProcessorCount * 4))));
-            OrderablePartitioner<Tuple<long, long>> ranges = Partitioner.Create(0L, total, chunkSize);
+            OrderablePartitioner<Tuple<long, long>> ranges = Partitioner.Create(startLinearIndex, total, chunkSize);
+
+            if (checkpointState != null)
+            {
+                checkpointState.CurrentLength = currentLength;
+                checkpointState.Reset(Environment.ProcessorCount);
+            }
 
             using CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
@@ -90,6 +96,10 @@ namespace PassHunter
                     {
                         if (token.IsCancellationRequested) break;
 
+                        // Report position to checkpoint tracker every 4096 attempts
+                        if ((i & 0xFFF) == 0)
+                            checkpointState?.UpdateCurrentIndex(i);
+
                         string pwd = gen.ToString();
                         bool matched = options.archiveType == ArchiveType.Rar
                             ? probe.TryRarPassword(pwd)
@@ -125,12 +135,13 @@ namespace PassHunter
                                 if (doneNow > total) doneNow = total;
 
                                 double percent = (double)doneNow / total * 100.0;
-                                double elapsedSec = options.watch.Elapsed.TotalSeconds;
+                                TimeSpan elapsed = options.PreviousElapsed + options.watch.Elapsed;
+                                double elapsedSec = elapsed.TotalSeconds;
                                 double avg = doneNow > 0 ? elapsedSec / doneNow : 0.0;
                                 double etaSec = (total - doneNow) * avg;
 
                                 ConsolePrinter.LiveInfo(
-                                    $"Progress: {doneNow:N0}/{total:N0} ({percent:F2}%) | Elapsed: {options.watch.Elapsed:hh\\:mm\\:ss} | ETA: {TimeSpan.FromSeconds(etaSec):hh\\:mm\\:ss}"
+                                    $"Progress: {doneNow:N0}/{total:N0} ({percent:F2}%) | Elapsed: {elapsed:hh\\:mm\\:ss} | ETA: {TimeSpan.FromSeconds(etaSec):hh\\:mm\\:ss}"
                                 );
 
                                 logSw.Restart();
@@ -147,6 +158,8 @@ namespace PassHunter
                     {
                         Interlocked.Add(ref tried, localTried);
                     }
+
+                    checkpointState?.ReleaseSlot();
                 });
             }
             catch (OperationCanceledException)

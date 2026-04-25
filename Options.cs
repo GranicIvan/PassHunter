@@ -15,6 +15,8 @@ namespace PassHunter
         public string outputDirectory = "";
         public ArchiveType archiveType = ArchiveType.Zip;
         public Stopwatch watch = new Stopwatch();
+        // Time carried over from a previous session that was saved via checkpoint
+        public TimeSpan PreviousElapsed = TimeSpan.Zero;
   
 
         public char[] CharSet { get; private set; } = Array.Empty<char>();

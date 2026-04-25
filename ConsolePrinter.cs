@@ -117,8 +117,8 @@ namespace PassHunter
 
             ConsolePrinter.Version($"{name} v{ver} | Runtime: {runtime}");
 
-            ConsolePrinter.Help("Usage: csCracker.exe <maxLength> <archiveFilePath> <outputDirectory>");
-            ConsolePrinter.Help("       csCracker.exe --fasttest|-ft [testDirectory]  (default: testFiles/FastTest in output folder)");
+            ConsolePrinter.Help("Usage: PassHunter.exe <maxLength> <archiveFilePath> <outputDirectory>");
+            ConsolePrinter.Help("       PassHunter.exe --fasttest|-ft [testDirectory]  (default: testFiles/FastTest in output folder)");
             ConsolePrinter.Help("Supported archive types: .zip, .rar");
             ConsolePrinter.Help("Options:");
             ConsolePrinter.Help("  -n : Include numbers");
@@ -128,6 +128,17 @@ namespace PassHunter
 
             ConsolePrinter.Help("Path must use / or \\\\ or \"\\\". For example: C:/user/file.rar  or  C:\\\\user\\\\file.zip or \"C:\\user\\file.zip\"");
             //TODO Explain unsuppoted terminals, and they print mant rows instead of updateing one, Also slower
+
+            ConsolePrinter.Help("");
+            ConsolePrinter.Help("Resume (continue a previously interrupted session):");
+            ConsolePrinter.Help("  Usage:   PassHunter.exe --resume <checkpointFile> [newArchivePath]");
+            ConsolePrinter.Help("  Example: PassHunter.exe --resume C:/files/secret.checkpoint.json");
+            ConsolePrinter.Help("  Example: PassHunter.exe --resume C:/files/secret.checkpoint.json D:/backup/secret.zip");
+            ConsolePrinter.Help("  - Press Ctrl+C during any run to stop and save a checkpoint next to the archive.");
+            ConsolePrinter.Help("  - The checkpoint file stores the last safely attempted position, elapsed time, and all options.");
+            ConsolePrinter.Help("  - On resume, all options (charset, max length, etc.) are restored from the checkpoint automatically.");
+            ConsolePrinter.Help("  - If the archive was moved, provide the new path as the third argument.");
+            ConsolePrinter.Help("  - The checkpoint file is deleted automatically when the password is found.");
         }
 
     }
