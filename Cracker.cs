@@ -14,6 +14,7 @@ namespace PassHunter
         private byte[]? _archiveBytes;              // entire archive kept in RAM
         private int _probeIndex = -1;               // index of smallest file entry we probe
         private MemoryStream? _zipStream;            // reused per worker; reset Position before each attempt
+        private ZipProbeData? _zipProbeData;         // fast header-check metadata; null = unsupported scheme
 
         // --- in-memory probe state (RAR) ---
         private byte[]? _rarBytes;
@@ -88,7 +89,7 @@ namespace PassHunter
                     if (options.archiveType == ArchiveType.Rar)
                         probe.BorrowRarProbe(master._rarBytes!, master._rarProbeIndex, master._rarHeadersEncrypted);
                     else
-                        probe.BorrowZipProbe(master._archiveBytes!, master._probeIndex);
+                        probe.BorrowZipProbe(master._archiveBytes!, master._probeIndex, master._zipProbeData);
 
                     // Each worker has its own generator; jump to the start of its range
                     PasswordGenerator gen = new PasswordGenerator(currentLength, options);
@@ -107,7 +108,7 @@ namespace PassHunter
                         string pwd = gen.ToString();
                         bool matched = options.archiveType == ArchiveType.Rar
                             ? probe.TryRarPassword(pwd)
-                            : probe.TryPasswordZip(pwd);
+                            : probe.TryPasswordZipFast(pwd);
                         if (matched)
                         {
                             // Capture once, then stop everyone
@@ -205,17 +206,28 @@ namespace PassHunter
                 .First(); // throws if archive has no files (good)
 
             _probeIndex = smallest.i;
+
+            // Parse crypto metadata for the fast header-only check.
+            // Returns null when the entry is unencrypted or uses an unsupported scheme;
+            // in that case TryPasswordZipFast falls back to the full Aspose drain.
+            _zipProbeData = ZipFastVerifier.ParseProbeEntry(_archiveBytes, _probeIndex);
+
+            if (_zipProbeData != null)
+                ConsolePrinter.Info($"ZIP fast-verify active: {_zipProbeData.Kind}");
+            else
+                ConsolePrinter.Warning("ZIP fast-verify not available for this archive. Using full-drain fallback.");
         }
 
         /// <summary>
         /// Lets a worker thread reuse the ZIP bytes already loaded by the master Cracker.
         /// No file I/O, no memory copy - just a reference share (bytes are read-only).
         /// </summary>
-        internal void BorrowZipProbe(byte[] bytes, int probeIndex)
+        internal void BorrowZipProbe(byte[] bytes, int probeIndex, ZipProbeData? probeData)
         {
             _archiveBytes = bytes;
             _probeIndex   = probeIndex;
             _zipStream    = new MemoryStream(bytes, writable: false);
+            _zipProbeData = probeData;   // shared read-only reference; no copy needed
         }
 
         /// <summary>
@@ -230,6 +242,32 @@ namespace PassHunter
             _rarStream           = new MemoryStream(bytes, writable: false);
         }
 
+
+        /// <summary>
+        /// Hot-path ZIP password check.
+        /// Runs the fast header-only check first (ZipCrypto: ~0.1 us, WinZipAES: PBKDF2+2B).
+        /// Calls TryPasswordZip (full Aspose drain) only when the fast check says plausible.
+        /// Falls back to the full drain entirely when _zipProbeData is null.
+        /// </summary>
+        private bool TryPasswordZipFast(string password)
+        {
+            if (_zipProbeData == null)
+                return TryPasswordZip(password);
+
+            bool plausible = _zipProbeData.Kind switch
+            {
+                ZipEncryptionKind.ZipCrypto => ZipFastVerifier.CheckZipCrypto(_zipProbeData, password),
+                ZipEncryptionKind.WinZipAes => ZipFastVerifier.CheckWinZipAes(_zipProbeData, password),
+                _                           => true
+            };
+
+            if (!plausible)
+                return false;
+
+            // Fast check says plausible - confirm with the full Aspose-based verify.
+            // ZipCrypto false-positive rate: ~1/256.  WinZip AES: ~1/65536.
+            return TryPasswordZip(password);
+        }
 
         // Perf #3: merged fast+full into a single archive open with a full drain.
         // Perf #5: reuses the cached _zipStream (reset position) instead of allocating a new MemoryStream each attempt.
